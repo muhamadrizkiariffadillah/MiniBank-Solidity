@@ -1,8 +1,6 @@
 const { time, loadFixture } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
-const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { expect } = require("chai");
 const hre = require("hardhat");
-const { deployContract } = require("@nomicfoundation/hardhat-ethers/types");
 require("@nomicfoundation/hardhat-ethers");
 
 describe("MiniBank", async function () {
@@ -16,17 +14,23 @@ describe("MiniBank", async function () {
     const { miniBank, owner, account1,account2, account3,account4} = await loadFixture(deployMiniBank);
     let addresses = [];
 
-    if(owners==1){
-      addresses = [String(owner.address)];
-    }else if (owners == 2){
-      addresses = [String(owner.address),String(account1.address)];
+    if (owners == 2){
+      addresses = [String(account1.address)];
     } else if (owners == 3) {
-      addresses = [String(owner.address),String(account1.address), String(account2.address)];
+      addresses = [String(account1.address), String(account2.address)];
     } else if (owners == 4){
-      addresses = [String(owner.address),String(account1.address), String(account2.address), String(account3.address)];
+      addresses = [String(account1.address), String(account2.address), String(account3.address)];
     }
     
+    await miniBank.connect(owner).createAccount(addresses);
 
+    if (deposit>0){
+      await miniBank.connect(owner).deposit(0,{value: deposit.toString()});
+    }
+    
+    for (let withdrawAmmount of withdrawAmounts){
+      await miniBank.connect(owner).requestWithdraw(0,withdrawAmmount);
+    }
     return { miniBank, owner, account1,account2, account3,account4};
   }
 
@@ -125,31 +129,62 @@ describe("MiniBank", async function () {
     });
   });
 
-  describe("Withdrawing", () =>{
+  describe("Withdraw", () =>{
     describe("Request a withdraw", () =>{
-      it("Account owner can request withdraw", async () =>{
-        const { miniBank, owner} = await deployMiniBankWithAccounts(1,1e8);
-        expect( await miniBank.connect(owner).requestWithdraw(0,1e6));
+      it("account owner can request withdraw", async () =>{
+        const { miniBank, owner} = await deployMiniBankWithAccounts(0,1e8);
+        expect(await miniBank.connect(owner).requestWithdraw(0,1e6));
       });
 
-      it("account owner can't request withdraw with insufficient amount", async () =>{
-        const { miniBank, owner} = await deployMiniBankWithAccounts(1,1e8);
-        await expect(miniBank.connect(owner).requestWithdraw(0,1e9)).to.be.reverted;
-      });
+    it("account owner can't request withdraw with insufficient amount", async () =>{
+            const { miniBank, owner} = await deployMiniBankWithAccounts(1,1e8);
+            await expect(miniBank.connect(owner).requestWithdraw(0,1e9)).to.be.reverted;
+          });
 
-      it("non-account owner cannot request withdraw", async () => {
-        const { miniBank, account1 } = await deployMiniBankWithAccounts(1,1e8);
-        await expect(miniBank.connect(account1).requestWithdraw(0,1e6)).to.be.reverted;
-      })
-    });
+          it("non-account owner cannot request withdraw", async () => {
+            const { miniBank, account1 } = await deployMiniBankWithAccounts(1,1e8);
+            await expect(miniBank.connect(account1).requestWithdraw(0,1e6)).to.be.reverted;
+          })
+        });
+        describe("Approve a withdraw",() => {
+          it("Only owner can approve a withdraw",async() => {
+            const { miniBank, account1 } = await deployMiniBankWithAccounts(2,1e8,[1e7]);
+            await miniBank.connect(account1).approveWithdraw(0,0);
+            expect(await miniBank.getApproval(0,0)).to.equal(1);
+          });
+      
+          it("Should not allow non-account approve withdraw",async() => {
+            const { miniBank, account2} = await deployMiniBankWithAccounts(2,1e8,[1e7]);
+            await expect(miniBank.connect(account2).approveWithdraw(0,0)).to.be.reverted;
+          });
+
+          it("should not allow creator of request to approve request",async ()=>{
+            const {miniBank,owner} = await deployMiniBankWithAccounts(2,1e8,[1e7]);
+            await expect(miniBank.connect(owner).approveWithdraw(0,0)).to.be.reverted;
+          });
+        });
+
+        describe("make withdraw",()=>{
+          it("should allow creator of request to withdraw approved request",async ()=>{
+            const {miniBank, owner , account1} = await deployMiniBankWithAccounts(2,1e8,[1e8]);
+            await miniBank.connect(account1).approveWithdraw(0,0);
+            await expect(await miniBank.connect(owner).withdraw(0,0)).to.changeEtherBalances([miniBank,owner],[-1e8,1e8]);
+          });
+
+          it("should not allow creator of request to withdraw approved request twice",async ()=>{
+            const {miniBank, owner , account1} = await deployMiniBankWithAccounts(2,2e8,[1e8]);
+            await miniBank.connect(account1).approveWithdraw(0,0);
+            await expect(await miniBank.connect(owner).withdraw(0,0)).to.changeEtherBalances([miniBank,owner],[-1e8,1e8]);
+            console.log(await miniBank.connect(owner).withdraw(0,0));
+          });
+
+          it("should not allow non-creator of request to withdraw approved request",async ()=>{
+            const {miniBank, account1} = await deployMiniBankWithAccounts(2,2e8,[1e8]);
+            await miniBank.connect(account1).approveWithdraw(0,0);
+            expect(await miniBank.connect(account1).withdraw(0,0)).to.be.reverted;
+          });
+        });
   });
 
-  // TODO: Should think about this test, always get error reverted you are not an owner this account
-  // describe("Approve a withdraw",() => {
-  //   it("Only owner can approve a withdraw",async() => {
-  //     const { miniBank, owner } = await deployMiniBankWithAccounts(1,1e8,[1e8]);
-  //     await miniBank.connect(owner).approveWithdraw(0,5e5);
-  //   });
-  // })
-
+  
 });

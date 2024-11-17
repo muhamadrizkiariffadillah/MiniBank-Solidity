@@ -45,8 +45,10 @@ contract MiniBank is ReentrancyGuard{
     modifier accountOwner(uint256 _accountId) {
         bool isOwner;
         for(uint256 idx;idx < accounts[_accountId].users.length; idx++){
-            isOwner = true;
-            break;
+            if(accounts[_accountId].users[idx] == msg.sender){
+                isOwner = true;
+                break;
+            }
         }
         require(isOwner,"you are not an owner this account");
         _;
